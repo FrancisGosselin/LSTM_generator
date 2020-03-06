@@ -12,7 +12,7 @@ has at least ~100k characters. ~1M is better.
 '''
 
 from __future__ import print_function
-from keras.callbacks import LambdaCallback
+from keras.callbacks import LambdaCallback, callbacks
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import LSTM
@@ -117,11 +117,14 @@ def on_epoch_end(epoch, _):
             sys.stdout.flush()
         print()
 
+filepath="weights-{epoch:02d}-{val_accuracy:.2f}.hdf5"
+checkpoint = callbacks.ModelCheckpoint(filepath, monitor='val_accuracy', verbose=1, save_best_only=True, mode='max')
+
 print_callback = LambdaCallback(on_epoch_end=on_epoch_end)
 
 model.fit(build_batch(path),
           steps_per_epoch= math.ceil(os.path.getsize(path) / chars_per_batch),
-          epochs=75,
-          callbacks=[print_callback])
+          epochs=60,
+          callbacks=[print_callback, checkpoint])
 
 model.save('lstm_model_2.h5')
