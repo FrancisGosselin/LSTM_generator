@@ -27,44 +27,49 @@ file = "/home/genderbender/Documents/TDP080/ngram/abcnews-date-text.csv"
 
 class LSTM_Model():
 
-    maxlen = 25
+    maxlen = 35
     step = 1
-    batch_size = 500
+    batch_size = 100
+    total_size = 30000
 
     def __buildbatch__(self, filename):
+        while True:
+            counter = 0
+            for chunk in pd.read_csv(filename, chunksize=self.batch_size):
+                # cut the text in semi-redundant sequences of maxlen characters
+                text = ("\n" + '-'*(self.maxlen - 6)).join(chunk['headline_text'].to_numpy())
 
-        for chunk in pd.read_csv(filename, chunksize=self.batch_size):
-            # cut the text in semi-redundant sequences of maxlen characters
-            text = "\n".join(chunk['headline_text'].to_numpy())
-
-            sentences = []
-            next_chars = []
-            
-            i = 0
-            while i < len(text) - self.maxlen:
-                sentences.append(text[i: i + self.maxlen])
-                next_chars.append(text[i + self.maxlen])
+                sentences = []
+                next_chars = []
                 
-                if next_chars[len(sentences) - 1] == '\n':
-                    i = i + self.maxlen + 1
-                else:
-                    i += self.step
-            
+                i = 0
+                while i < len(text) - self.maxlen:
+                    sentences.append(text[i: i + self.maxlen])
+                    next_chars.append(text[i + self.maxlen])
+                    
+                    if next_chars[len(sentences) - 1] == '\n':
+                        i = i + self.maxlen + 1
+                    else:
+                        i += self.step
+                
 
-            x = np.zeros((len(sentences), self.maxlen, len(self.chars)), dtype=np.bool)
-            y = np.zeros((len(sentences), len(self.chars)), dtype=np.bool)
-            for i, sentence in enumerate(sentences):
-                for t, char in enumerate(sentence):
-                    x[i, t, self.char_indices[char]] = 1
-                y[i, self.char_indices[next_chars[i]]] = 1
+                x = np.zeros((len(sentences), self.maxlen, len(self.chars)), dtype=np.bool)
+                y = np.zeros((len(sentences), len(self.chars)), dtype=np.bool)
+                for i, sentence in enumerate(sentences):
+                    for t, char in enumerate(sentence):
+                        x[i, t, self.char_indices[char]] = 1
+                    y[i, self.char_indices[next_chars[i]]] = 1
 
-            yield (x, y)
+                yield (x, y)
+                counter += self.batch_size
+                if counter > self.total_size:
+                    break
 
 
     def __buildmodel__(self, filename):
-        for chunk in pd.read_csv(filename, chunksize=10000):
+        for chunk in pd.read_csv(filename, chunksize=self.total_size):
             text = "\n".join(chunk['headline_text'].to_numpy())
-            self.chars = sorted(list(set(text)))
+            self.chars = sorted(list(set(text)) + ['-'])
             break
         
         print('total chars:', len(self.chars))
@@ -83,13 +88,13 @@ class LSTM_Model():
     def train(self, filename):
         self.filename = filename
         with open(filename) as f:
-            self.data_size = sum(1 for line in f) / 10
+            self.data_size = sum(1 for line in f)
 
         self.__buildmodel__(filename)
         print_callback = LambdaCallback(on_epoch_end=self.on_epoch_end)
 
         self.model.fit_generator(self.__buildbatch__(filename),
-                steps_per_epoch=math.ceil(self.data_size/self.batch_size),
+                steps_per_epoch=math.ceil(self.total_size/self.batch_size),
                 epochs=60,
                 callbacks=[print_callback])
 
@@ -122,6 +127,8 @@ class LSTM_Model():
 
 
         for sentence in sentences:
+            sys.stdout.write(sentence + " --> ")
+            sys.stdout.flush()
             next_char = ''
             while next_char != '\n' and len(sentence) < 40:
 
